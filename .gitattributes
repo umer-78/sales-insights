@@ -1,0 +1,4 @@
+# reports/ holds generated output committed so the README's figures can be
+# checked without running the pipeline. It is not source, and letting GitHub
+# count the generated HTML makes the repository look like a web project.
+reports/** linguist-generated=true
