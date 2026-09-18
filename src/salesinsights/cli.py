@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -35,6 +36,22 @@ def load(path: Path) -> pd.DataFrame:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point. Wraps the real work so that piping into `head` — which closes
+    the pipe early — ends quietly instead of printing a BrokenPipeError."""
+    try:
+        return _run(argv)
+    except BrokenPipeError:
+        # The reader went away. Point stdout at the void so the interpreter's
+        # own flush on exit does not raise the same error again.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return 0
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
+
+def _run(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sales", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
