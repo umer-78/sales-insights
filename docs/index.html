@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sales Insights — RFM &amp; Cohort Demo</title>
+  <meta name="description" content="Interactive demo of Sales Insights: RFM segments and cohort retention computed in the browser with canvas charts.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%232563eb'/><text x='16' y='23' font-size='16' text-anchor='middle' fill='white' font-family='monospace'>SI</text></svg>">
+  <style>
+    :root {
+      --bg: #f6f7f9; --surface: #ffffff; --surface-2: #eef0f4; --border: #dde1e8;
+      --text: #16181d; --muted: #5d6573; --accent: #2563eb; --accent-ink: #ffffff;
+      --good: #15803d; --bad: #b91c1c; --warn: #d97706;
+      --radius: 12px;
+      --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 4px 16px rgb(16 24 40 / 0.05);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0e1116; --surface: #161a21; --surface-2: #1d222b; --border: #2a303b;
+        --text: #e8eaee; --muted: #9aa3b2; --accent: #60a5fa; --accent-ink: #0b1220;
+        --good: #4ade80; --bad: #f87171; --warn: #fbbf24;
+        --shadow: none; color-scheme: dark;
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); }
+    .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
+    header.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    header.top h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+    header.top p { margin: 2px 0 0; color: var(--muted); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow); min-width: 0; margin-bottom: 16px; }
+    .card h2 { font-size: 15px; margin: 0 0 12px; }
+    .grid { display: grid; gap: 16px; }
+    .grid.two { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    input, select, textarea, button { font: inherit; color: inherit; }
+    input, select {
+      width: 100%; padding: 9px 11px; border-radius: 9px;
+      border: 1px solid var(--border); background: var(--surface-2); outline: none; min-width: 0;
+    }
+    input:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button {
+      cursor: pointer; border: 1px solid var(--border); background: var(--surface-2);
+      padding: 9px 14px; border-radius: 9px; font-weight: 600;
+    }
+    button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; }
+    .row > * { flex: 1 1 160px; }
+    .row > button { flex: 0 0 auto; }
+    .muted { color: var(--muted); }
+    .mono { font-family: var(--mono); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 12px 0; }
+    .stat { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+    .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .stat .v { font-family: var(--mono); font-size: 17px; font-weight: 700; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    td.num, th.num { text-align: right; font-family: var(--mono); }
+    .table-wrap { overflow-x: auto; }
+    tr[data-seg] { cursor: pointer; }
+    tr[data-seg]:hover, tr[data-seg].sel { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+    canvas { width: 100%; height: auto; display: block; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tabs button.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+    .heat-wrap { overflow-x: auto; }
+    .heat { border-collapse: separate; border-spacing: 3px; font-size: 13px; }
+    .heat th { padding: 4px 8px; font-size: 11px; }
+    .heat td {
+      padding: 8px 10px; text-align: center; font-family: var(--mono); font-weight: 600;
+      border: none; border-radius: 6px; min-width: 56px;
+    }
+    .heat td.empty { background: var(--surface-2); color: var(--muted); font-weight: 400; }
+    footer { margin-top: 32px; color: var(--muted); font-size: 13px; text-align: center; }
+    code { font-family: var(--mono); font-size: 0.92em; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+    .presets { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .presets button { font-size: 13px; padding: 5px 10px; font-weight: 500; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 8px; }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+    .note { font-size: 13px; color: var(--muted); margin-top: 8px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 600; background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1>Sales Insights</h1>
+        <p>Messy orders export → cleaned analysis → RFM segments &amp; cohort retention, computed live on a seeded sample.</p>
+      </div>
+      <a href="https://github.com/umer-78/sales-insights">Source on GitHub</a>
+    </header>
+
+    <section class="card">
+      <h2>Sample data</h2>
+      <p class="muted" style="margin-top:0">A deterministic generator mirrors <code>sales sample</code>: ~900 customers, 10 SKUs, 19 months, guests, returns as negative quantities, weighted repeat buyers.</p>
+      <div class="row">
+        <div>
+          <label for="rows">Order rows</label>
+          <input id="rows" type="number" min="200" max="8000" step="100" value="2500">
+        </div>
+        <div>
+          <label for="seed">Seed</label>
+          <input id="seed" type="number" min="1" max="99999" value="11">
+        </div>
+        <div>
+          <label for="championBias">Heavy-buyer bias (%)</label>
+          <input id="championBias" type="number" min="0" max="40" value="8">
+        </div>
+        <div style="flex:0 0 auto; display:flex; gap:8px; flex-wrap:wrap">
+          <button class="primary" id="regenBtn" type="button">Regenerate + analyse</button>
+        </div>
+      </div>
+      <div class="stats" aria-live="polite">
+        <div class="stat"><div class="k">Rows in</div><div class="v" id="statRows">—</div></div>
+        <div class="stat"><div class="k">Net revenue</div><div class="v" id="statRev">—</div></div>
+        <div class="stat"><div class="k">Identifiable customers</div><div class="v" id="statCust">—</div></div>
+        <div class="stat"><div class="k">Returns kept</div><div class="v" id="statRet">—</div></div>
+        <div class="stat"><div class="k">Guest rows</div><div class="v" id="statGuest">—</div></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Views</h2>
+      <div class="tabs" role="tablist">
+        <button type="button" class="active" data-tab="rfm" role="tab" aria-selected="true">RFM segments</button>
+        <button type="button" data-tab="cohort" role="tab" aria-selected="false">Cohort retention</button>
+        <button type="button" data-tab="monthly" role="tab" aria-selected="false">Monthly revenue</button>
+        <button type="button" data-tab="products" role="tab" aria-selected="false">Top products</button>
+      </div>
+
+      <div id="panel-rfm" role="tabpanel">
+        <div class="table-wrap">
+          <table id="segTable">
+            <thead>
+              <tr>
+                <th>Segment</th>
+                <th class="num">Customers</th>
+                <th class="num">Revenue</th>
+                <th class="num">Share</th>
+                <th class="num">Avg orders</th>
+                <th class="num">Avg recency (d)</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="note">Click a segment to highlight it in the chart. Quartile scores: R 4 = most recent; F/M 4 = highest. Labels match <code>rfm_segments()</code>.</p>
+        <canvas id="segChart" width="900" height="360" role="img" aria-label="Revenue share by RFM segment"></canvas>
+        <div class="legend" id="segLegend"></div>
+        <details style="margin-top:12px">
+          <summary class="muted" style="cursor:pointer">Top 15 customers in the selected (or overall) view</summary>
+          <div class="table-wrap" style="margin-top:8px">
+            <table id="topCust">
+              <thead><tr><th>Customer</th><th class="num">Orders</th><th class="num">Revenue</th><th class="num">Recency</th><th>Segment</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </details>
+      </div>
+
+      <div id="panel-cohort" role="tabpanel" hidden>
+        <p class="muted" style="margin-top:0">Share of each signup-month cohort that bought again N months later. <b>Guests excluded</b> — they cannot be followed over time.</p>
+        <div class="heat-wrap">
+          <table class="heat" id="cohortHeat"><thead></thead><tbody></tbody></table>
+        </div>
+        <p class="note" id="cohortNote"></p>
+        <canvas id="cohortChart" width="900" height="340" role="img" aria-label="Cohort retention curves"></canvas>
+        <div class="legend"><span>One line per cohort (offset 0 always 100%). Hover the table for values.</span></div>
+      </div>
+
+      <div id="panel-monthly" role="tabpanel" hidden>
+        <p class="muted" style="margin-top:0">Net revenue (sales − returns) by month — same buckets as <code>monthly_summary()</code>.</p>
+        <canvas id="monthChart" width="900" height="340" role="img" aria-label="Monthly net revenue"></canvas>
+      </div>
+
+      <div id="panel-products" role="tabpanel" hidden>
+        <p class="muted" style="margin-top:0">Units and revenue with return rates — <code>top_products()</code> style.</p>
+        <div class="table-wrap">
+          <table id="prodTable">
+            <thead><tr><th>Product</th><th>Category</th><th class="num">Units</th><th class="num">Revenue</th><th class="num">Return rate</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <canvas id="prodChart" width="900" height="320" role="img" aria-label="Top products by revenue" style="margin-top:12px"></canvas>
+      </div>
+    </section>
+
+    <div class="grid two">
+      <section class="card">
+        <h2>The pipeline</h2>
+        <div class="mono muted" style="font-size:13px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px;white-space:pre-wrap">orders.csv ─▶ clean (report)
+        ─▶ analysis ─▶ CLI tables
+        ─▶ HTML report</div>
+        <p class="muted" style="margin-bottom:0">Cleaning reports duplicates removed, blank prices dropped, guests kept, returns kept negative, country spellings normalised.</p>
+      </section>
+      <section class="card">
+        <h2>RFM rules</h2>
+        <ul class="muted" style="margin:0;padding-left:20px;font-size:14px">
+          <li>R ≥ 3 &amp; F ≥ 3 &amp; M ≥ 3 → <b>champions</b></li>
+          <li>R ≥ 3 &amp; F ≥ 3 → <b>loyal</b></li>
+          <li>R ≥ 3 &amp; F ≤ 2 → <b>new or occasional</b></li>
+          <li>R ≤ 2 &amp; F ≥ 3 &amp; M ≥ 3 → <b>at risk (valuable)</b></li>
+          <li>R = 1 &amp; F ≤ 2 → <b>lost</b></li>
+          <li>else → <b>needs attention</b></li>
+        </ul>
+        <p class="muted" style="margin-bottom:0">Quartiles with <code>duplicates=drop</code> for ties; F/M ranked first so small shops with ties still split.</p>
+      </section>
+    </div>
+
+    <footer>15 tests · Python 3.10+ · pandas 2.0+ · Built by <a href="https://github.com/umer-78">Umer Hashmi</a></footer>
+  </div>
+
+  <script>
+    'use strict';
+    const $ = id => document.getElementById(id);
+
+    const PRODUCTS = [
+      { sku: 'SKU-1001', product: 'Mechanical keyboard', category: 'Peripherals', price: 9800 },
+      { sku: 'SKU-1002', product: 'Wireless mouse', category: 'Peripherals', price: 2600 },
+      { sku: 'SKU-1003', product: 'USB-C cable 2m', category: 'Cables', price: 850 },
+      { sku: 'SKU-1004', product: 'HDMI cable 1.5m', category: 'Cables', price: 1300 },
+      { sku: 'SKU-1005', product: '24 inch monitor', category: 'Displays', price: 32900 },
+      { sku: 'SKU-1006', product: 'Laptop stand', category: 'Accessories', price: 4200 },
+      { sku: 'SKU-1007', product: 'Noise cancelling headset', category: 'Audio', price: 6900 },
+      { sku: 'SKU-1008', product: '1TB portable SSD', category: 'Storage', price: 13500 },
+      { sku: 'SKU-1009', product: 'Webcam 1080p', category: 'Video', price: 5400 },
+      { sku: 'SKU-1010', product: '65W GaN charger', category: 'Power', price: 3900 }
+    ];
+    const COUNTRIES = ['Pakistan', 'pakistan', 'PK', 'United Arab Emirates', 'UAE', 'United Kingdom', 'UK', 'Saudi Arabia'];
+    const CHANNELS = ['website', 'marketplace', 'retail', 'Website'];
+    const SEGMENT_ORDER = [
+      'champions', 'at risk (valuable)', 'needs attention',
+      'new or occasional', 'lost', 'loyal'
+    ];
+    const SEGMENT_COLORS = {
+      'champions': '#15803d',
+      'loyal': '#2563eb',
+      'at risk (valuable)': '#d97706',
+      'needs attention': '#7c3aed',
+      'new or occasional': '#0891b2',
+      'lost': '#b91c1c'
+    };
+
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+    function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+    function weightedPick(rng, arr, weights) {
+      const total = weights.reduce((a, b) => a + b, 0);
+      let r = rng() * total;
+      for (let i = 0; i < arr.length; i++) { r -= weights[i]; if (r <= 0) return arr[i]; }
+      return arr[arr.length - 1];
+    }
+
+    // Generator aligned with generate.py (seeded, messy on purpose)
+    function generateOrders(rows, seed, biasPct) {
+      const rng = mulberry32(seed);
+      const nCustomers = 899;
+      const customers = Array.from({ length: nCustomers }, (_, i) => 'C' + String(i + 1).padStart(5, '0'));
+      const heavy = Math.round(nCustomers * (biasPct / 100));
+      const weights = customers.map((_, i) => i < heavy ? 8 : 1);
+
+      const start = Date.now() - 545 * 86400000;
+      const records = [];
+      for (let i = 0; i < rows; i++) {
+        const day = Math.floor(rng() * 540);
+        let date = new Date(start + day * 86400000 + Math.floor(rng() * 14 + 8) * 3600000);
+        if ((date.getMonth() === 10 || date.getMonth() === 11) && rng() < 0.25) {
+          // seasonality lift already via month; no extra shift needed for demo
+        }
+        const p = pick(rng, PRODUCTS);
+        const quantity = weightedPick(rng, [1, 2, 3, 5], [70, 20, 7, 3]);
+        const discount = weightedPick(rng, [0, 5, 10, 20], [70, 15, 10, 5]);
+        const country = pick(rng, COUNTRIES);
+        const channel = pick(rng, CHANNELS);
+        records.push({
+          order_id: 'ORD-' + (100000 + i),
+          order_date: date,
+          customer_id: weightedPick(rng, customers, weights),
+          sku: p.sku, product: p.product, category: p.category,
+          unit_price: p.price, quantity, discount_percent: discount,
+          country, channel, is_return: false
+        });
+      }
+      // mess: 2% guest blanks, 3% returns negative, 2% duplicates
+      const nGuest = Math.floor(rows * 0.02);
+      for (let k = 0; k < nGuest; k++) {
+        records[Math.floor(rng() * records.length)].customer_id = null;
+      }
+      const nRet = Math.floor(rows * 0.03);
+      for (let k = 0; k < nRet; k++) {
+        const r = records[Math.floor(rng() * records.length)];
+        r.quantity = -Math.abs(r.quantity);
+        r.is_return = true;
+      }
+      const nDup = Math.floor(rows * 0.02);
+      for (let k = 0; k < nDup; k++) {
+        const src = records[Math.floor(rng() * records.length)];
+        records.push({ ...src });
+      }
+      // normalise country spellings like the clean step
+      const norm = { 'PK': 'Pakistan', 'pakistan': 'Pakistan', 'UAE': 'United Arab Emirates', 'UK': 'United Kingdom' };
+      for (const r of records) {
+        r.country = norm[r.country] || r.country;
+        if (!r.customer_id) r.customer_id = 'guest';
+        r.revenue = r.unit_price * r.quantity * (1 - r.discount_percent / 100);
+      }
+      return records;
+    }
+
+    function monthKey(d) {
+      return d.getFullYear() * 12 + d.getMonth();
+    }
+    function monthLabel(key) {
+      const y = Math.floor(key / 12);
+      const m = key % 12;
+      return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m] + ' ' + String(y).slice(2);
+    }
+    function fmtRs(n) {
+      const abs = Math.abs(n);
+      const sign = n < 0 ? '−' : '';
+      if (abs >= 1e7) return sign + 'Rs ' + (abs / 1e7).toFixed(2) + 'M';
+      if (abs >= 1e5) return sign + 'Rs ' + (abs / 1e5).toFixed(2) + 'L';
+      return sign + 'Rs ' + Math.round(abs).toLocaleString('en-US');
+    }
+
+    // Quartile scores (R reversed: low recency days → high score)
+    function qcutDescending(values, labels) {
+      // values: original metric where lower is "better" for recency days
+      const sorted = values.slice().sort((a, b) => a - b);
+      const n = sorted.length;
+      const qs = [0.25, 0.5, 0.75].map(p => {
+        const idx = Math.min(n - 1, Math.floor(p * n));
+        return sorted[idx];
+      });
+      return values.map(v => {
+        if (v <= qs[0]) return labels[0];
+        if (v <= qs[1]) return labels[1];
+        if (v <= qs[2]) return labels[2];
+        return labels[3];
+      });
+    }
+
+    function qcutAscendingRanked(ranked, labels) {
+      // ranked: array of {key, value} ranked by value asc, ties broken by order
+      const n = ranked.length;
+      const score = new Map();
+      ranked.forEach((r, i) => {
+        let q;
+        if (i < n * 0.25) q = 1;
+        else if (i < n * 0.5) q = 2;
+        else if (i < n * 0.75) q = 3;
+        else q = 4;
+        score.set(r.key, q);
+      });
+      return score;
+    }
+
+    function rfmLabel(r, f, m) {
+      if (r >= 3 && f >= 3 && m >= 3) return 'champions';
+      if (r >= 3 && f >= 3) return 'loyal';
+      if (r >= 3 && f <= 2) return 'new or occasional';
+      if (r <= 2 && f >= 3 && m >= 3) return 'at risk (valuable)';
+      if (r === 1 && f <= 2) return 'lost';
+      return 'needs attention';
+    }
+
+    function analyse(orders) {
+      const sales = orders.filter(o => !o.is_return);
+      const identified = sales.filter(o => o.customer_id !== 'guest');
+      const returns = orders.filter(o => o.is_return);
+      const netRevenue = sales.reduce((s, o) => s + o.revenue, 0) -
+                         returns.reduce((s, o) => s + Math.abs(o.revenue), 0);
+
+      // RFM
+      const byCust = new Map();
+      for (const o of identified) {
+        if (!byCust.has(o.customer_id)) {
+          byCust.set(o.customer_id, { customer_id: o.customer_id, last: -Infinity, orders: new Set(), monetary: 0 });
+        }
+        const c = byCust.get(o.customer_id);
+        if (o.order_date.getTime() > c.last) c.last = o.order_date.getTime();
+        c.orders.add(o.order_id);
+        c.monetary += o.revenue;
+      }
+      const asOf = Math.max(...sales.map(o => o.order_date.getTime()));
+      const rows = [...byCust.values()].map(c => ({
+        customer_id: c.customer_id,
+        frequency: c.orders.size,
+        monetary: c.monetary,
+        recency_days: Math.floor((asOf - c.last) / 86400000)
+      }));
+
+      // R: lower days → higher score → labels [4,3,2,1] on ascending days
+      const rScores = qcutDescending(rows.map(r => r.recency_days), [4, 3, 2, 1]);
+      rows.forEach((r, i) => { r.r_score = rScores[i]; });
+
+      const fRank = rows.map(r => ({ key: r.customer_id, value: r.frequency }))
+        .sort((a, b) => a.value - b.value);
+      const mRank = rows.map(r => ({ key: r.customer_id, value: r.monetary }))
+        .sort((a, b) => a.value - b.value);
+      const fMap = qcutAscendingRanked(fRank);
+      const mMap = qcutAscendingRanked(mRank);
+      for (const r of rows) {
+        r.f_score = fMap.get(r.customer_id);
+        r.m_score = mMap.get(r.customer_id);
+        r.segment = rfmLabel(r.r_score, r.f_score, r.m_score);
+      }
+      rows.sort((a, b) => b.monetary - a.monetary);
+
+      const segMap = new Map();
+      for (const seg of SEGMENT_ORDER) {
+        segMap.set(seg, { segment: seg, customers: 0, revenue: 0, ordersSum: 0, recencySum: 0 });
+      }
+      for (const r of rows) {
+        const s = segMap.get(r.segment);
+        s.customers++;
+        s.revenue += r.monetary;
+        s.ordersSum += r.frequency;
+        s.recencySum += r.recency_days;
+      }
+      const totalRev = rows.reduce((s, r) => s + r.monetary, 0) || 1;
+      const segments = [...segMap.values()]
+        .filter(s => s.customers > 0)
+        .map(s => ({
+          segment: s.segment,
+          customers: s.customers,
+          revenue: s.revenue,
+          share: 100 * s.revenue / totalRev,
+          avg_orders: s.ordersSum / s.customers,
+          avg_recency: s.recencySum / s.customers
+        }))
+        .sort((a, b) => b.revenue - a.revenue);
+
+      // Cohort retention (guests excluded, 6 months)
+      const cohortOf = new Map();
+      for (const o of identified) {
+        const prev = cohortOf.get(o.customer_id);
+        const mk = monthKey(o.order_date);
+        if (prev === undefined || mk < prev) cohortOf.set(o.customer_id, mk);
+      }
+      const offsets = new Map(); // cohort → Map(offset → Set customers)
+      for (const o of identified) {
+        const cohort = cohortOf.get(o.customer_id);
+        const off = monthKey(o.order_date) - cohort;
+        if (off < 0 || off > 6) continue;
+        if (!offsets.has(cohort)) offsets.set(cohort, new Map());
+        const m = offsets.get(cohort);
+        if (!m.has(off)) m.set(off, new Set());
+        m.get(off).add(o.customer_id);
+      }
+      const cohorts = [...offsets.keys()].sort((a, b) => a - b);
+      const cohortRows = cohorts.map(c => {
+        const m = offsets.get(c);
+        const size = (m.get(0) || new Set()).size || 1;
+        const cells = [];
+        for (let off = 0; off <= 6; off++) {
+          const s = m.get(off);
+          cells.push(s ? Math.round(1000 * s.size / size) / 10 : null);
+        }
+        return { cohort: c, size, cells };
+      });
+
+      // Monthly net revenue
+      const revByMonth = new Map();
+      const retByMonth = new Map();
+      for (const o of sales) {
+        const k = monthKey(o.order_date);
+        revByMonth.set(k, (revByMonth.get(k) || 0) + o.revenue);
+      }
+      for (const o of returns) {
+        const k = monthKey(o.order_date);
+        retByMonth.set(k, (retByMonth.get(k) || 0) + Math.abs(o.revenue));
+      }
+      const months = [...new Set([...revByMonth.keys(), ...retByMonth.keys()])].sort((a, b) => a - b);
+      const monthly = months.map(k => ({
+        month: k,
+        net: (revByMonth.get(k) || 0) - (retByMonth.get(k) || 0),
+        returns: retByMonth.get(k) || 0
+      }));
+
+      // Top products
+      const prodMap = new Map();
+      for (const o of sales) {
+        if (!prodMap.has(o.sku)) {
+          prodMap.set(o.sku, { sku: o.sku, product: o.product, category: o.category, units: 0, revenue: 0, returned: 0 });
+        }
+        const p = prodMap.get(o.sku);
+        p.units += o.quantity;
+        p.revenue += o.revenue;
+      }
+      for (const o of returns) {
+        const p = prodMap.get(o.sku);
+        if (p) p.returned += Math.abs(o.quantity);
+      }
+      const products = [...prodMap.values()]
+        .map(p => ({
+          ...p,
+          return_rate: 100 * p.returned / Math.max(1, p.units + p.returned)
+        }))
+        .sort((a, b) => b.revenue - a.revenue);
+
+      const guestRows = orders.filter(o => o.customer_id === 'guest' || !o.customer_id).length;
+
+      return {
+        rows: orders.length,
+        netRevenue,
+        customers: rows.length,
+        returns: returns.length,
+        guestRows,
+        segments,
+        rfmRows: rows,
+        cohorts: cohortRows,
+        monthly,
+        products
+      };
+    }
+
+    // ---- Drawing ----
+    const styles = () => getComputedStyle(document.documentElement);
+    function cssVar(name, fallback) {
+      return styles().getPropertyValue(name).trim() || fallback;
+    }
+
+    function prepCanvas(canvas, cssH) {
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth || canvas.width;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(cssH * dpr);
+      canvas.style.height = cssH + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, cssH);
+      return { ctx, w, h: cssH };
+    }
+
+    function drawSegmentChart(segments, selected) {
+      const canvas = $('segChart');
+      const { ctx, w, h } = prepCanvas(canvas, 360);
+      const pad = { l: 150, r: 24, t: 16, b: 36 };
+      const plotW = w - pad.l - pad.r;
+      const plotH = h - pad.t - pad.b;
+      const max = Math.max(...segments.map(s => s.share), 1);
+      const rowH = plotH / segments.length;
+
+      const muted = cssVar('--muted', '#5d6573');
+      const border = cssVar('--border', '#dde1e8');
+      const text = cssVar('--text', '#16181d');
+
+      segments.forEach((s, i) => {
+        const y = pad.t + i * rowH + rowH * 0.2;
+        const bh = rowH * 0.6;
+        const bw = (s.share / max) * plotW;
+        const dim = selected && selected !== s.segment;
+        ctx.globalAlpha = dim ? 0.3 : 1;
+        ctx.fillStyle = SEGMENT_COLORS[s.segment] || cssVar('--accent', '#2563eb');
+        ctx.fillRect(pad.l, y, bw, bh);
+        ctx.fillStyle = text;
+        ctx.font = '13px system-ui';
+        ctx.textAlign = 'right';
+        ctx.fillText(s.segment, pad.l - 10, y + bh * 0.7);
+        ctx.textAlign = 'left';
+        ctx.font = 'bold 13px ui-monospace, monospace';
+        ctx.fillText(s.share.toFixed(1) + '%', pad.l + bw + 8, y + bh * 0.7);
+        ctx.globalAlpha = 1;
+      });
+
+      // baseline
+      ctx.strokeStyle = border;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, pad.t);
+      ctx.lineTo(pad.l, pad.t + plotH);
+      ctx.stroke();
+
+      ctx.fillStyle = muted;
+      ctx.font = '12px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('share of customer revenue (%)', pad.l + plotW / 2, h - 10);
+    }
+
+    function drawCohortChart(cohorts) {
+      const canvas = $('cohortChart');
+      const { ctx, w, h } = prepCanvas(canvas, 340);
+      const pad = { l: 48, r: 120, t: 20, b: 40 };
+      const plotW = w - pad.l - pad.r;
+      const plotH = h - pad.t - pad.b;
+      const muted = cssVar('--muted', '#5d6573');
+      const border = cssVar('--border', '#dde1e8');
+      const accent = cssVar('--accent', '#2563eb');
+
+      // grid
+      ctx.strokeStyle = border;
+      ctx.fillStyle = muted;
+      ctx.font = '11px system-ui';
+      ctx.textAlign = 'right';
+      for (let p = 0; p <= 100; p += 25) {
+        const y = pad.t + plotH - (p / 100) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(pad.l, y);
+        ctx.lineTo(pad.l + plotW, y);
+        ctx.stroke();
+        ctx.fillText(p + '%', pad.l - 8, y + 4);
+      }
+      ctx.textAlign = 'center';
+      for (let off = 0; off <= 6; off++) {
+        const x = pad.l + (off / 6) * plotW;
+        ctx.fillText('M' + off, x, pad.t + plotH + 18);
+      }
+
+      // palette per cohort
+      const palette = ['#2563eb', '#15803d', '#d97706', '#7c3aed', '#0891b2', '#b91c1c', '#db2777', '#65a30d', '#ea580c', '#4f46e5', '#0d9488', '#9333ea'];
+      // only draw last 12 cohorts for readability
+      const show = cohorts.slice(-12);
+      show.forEach((c, ci) => {
+        ctx.strokeStyle = palette[ci % palette.length];
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        let started = false;
+        c.cells.forEach((v, off) => {
+          if (v == null) return;
+          const x = pad.l + (off / 6) * plotW;
+          const y = pad.t + plotH - (v / 100) * plotH;
+          if (!started) { ctx.moveTo(x, y); started = true; }
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        // legend
+        const lastVal = [...c.cells].reverse().find(v => v != null);
+        if (lastVal != null) {
+          const y = pad.t + plotH - (lastVal / 100) * plotH;
+          ctx.fillStyle = palette[ci % palette.length];
+          ctx.font = '11px ui-monospace, monospace';
+          ctx.textAlign = 'left';
+          ctx.fillText(monthLabel(c.cohort), pad.l + plotW + 8, y + 4);
+        }
+      });
+      ctx.lineWidth = 1;
+    }
+
+    function heatColor(pct) {
+      if (pct == null) return null;
+      // 0 → surface-2 feel, 100 → accent
+      const t = Math.min(1, pct / 100);
+      const r = Math.round(37 + (1 - t) * 0);
+      // simple blend between #dbeafe and #2563eb in light; use fixed scale for both schemes
+      const from = [37, 99, 235];
+      const to = [219, 234, 254];
+      const rr = Math.round(to[0] + (from[0] - to[0]) * t);
+      const gg = Math.round(to[1] + (from[1] - to[1]) * t);
+      const bb = Math.round(to[2] + (from[2] - to[2]) * t);
+      const alpha = 0.25 + 0.75 * t;
+      return `rgba(${rr},${gg},${bb},${alpha})`;
+    }
+
+    function renderCohortTable(cohorts) {
+      const table = $('cohortHeat');
+      const thead = table.querySelector('thead');
+      const tbody = table.querySelector('tbody');
+      thead.innerHTML = '<tr><th>Cohort</th><th class="num">Size</th>' +
+        Array.from({ length: 7 }, (_, i) => `<th class="num">M${i}</th>`).join('') + '</tr>';
+      tbody.innerHTML = cohorts.map(c => {
+        const cells = c.cells.map(v => {
+          if (v == null) return '<td class="empty">—</td>';
+          const bg = heatColor(v);
+          const ink = v > 55 ? '#fff' : '';
+          return `<td style="background:${bg};color:${ink}">${v}%</td>`;
+        }).join('');
+        return `<tr><th style="text-align:left;font-family:var(--mono);font-size:12px">${monthLabel(c.cohort)}</th><td class="num">${c.size}</td>${cells}</tr>`;
+      }).join('');
+
+      const withRepeat = cohorts.filter(c => c.cells[1] != null && c.cells[1] > 0);
+      const avg = withRepeat.length
+        ? withRepeat.reduce((s, c) => s + c.cells[1], 0) / withRepeat.length
+        : 0;
+      $('cohortNote').textContent =
+        `Showing ${cohorts.length} cohorts · average month-1 repeat rate ≈ ${avg.toFixed(1)}%` +
+        (withRepeat.length ? ` (over ${withRepeat.length} cohorts with M1 data).` : '.');
+    }
+
+    function drawMonthly(monthly) {
+      const canvas = $('monthChart');
+      const { ctx, w, h } = prepCanvas(canvas, 340);
+      const pad = { l: 64, r: 16, t: 16, b: 56 };
+      const plotW = w - pad.l - pad.r;
+      const plotH = h - pad.t - pad.b;
+      const max = Math.max(...monthly.map(m => m.net), 1);
+      const barW = plotW / Math.max(monthly.length, 1);
+      const muted = cssVar('--muted', '#5d6573');
+      const border = cssVar('--border', '#dde1e8');
+      const accent = cssVar('--accent', '#2563eb');
+      const text = cssVar('--text', '#16181d');
+
+      ctx.strokeStyle = border;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, pad.t);
+      ctx.lineTo(pad.l, pad.t + plotH);
+      ctx.lineTo(pad.l + plotW, pad.t + plotH);
+      ctx.stroke();
+
+      monthly.forEach((m, i) => {
+        const bh = (m.net / max) * (plotH - 8);
+        const x = pad.l + i * barW + barW * 0.15;
+        const y = pad.t + plotH - bh;
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(x, y, barW * 0.7, bh);
+        ctx.globalAlpha = 1;
+        if (i % 2 === 0) {
+          ctx.save();
+          ctx.translate(pad.l + i * barW + barW / 2, pad.t + plotH + 14);
+          ctx.fillStyle = muted;
+          ctx.font = '10px ui-monospace, monospace';
+          ctx.textAlign = 'right';
+          ctx.rotate(-Math.PI / 4);
+          ctx.fillText(monthLabel(m.month), 0, 0);
+          ctx.restore();
+        }
+      });
+
+      ctx.fillStyle = muted;
+      ctx.font = '12px system-ui';
+      ctx.textAlign = 'left';
+      ctx.fillText('peak ' + fmtRs(max), pad.l + 4, pad.t + 14);
+      ctx.textAlign = 'center';
+      ctx.fillText('net revenue by month', pad.l + plotW / 2, h - 8);
+    }
+
+    function drawProducts(products) {
+      const top = products.slice(0, 8);
+      const canvas = $('prodChart');
+      const { ctx, w, h } = prepCanvas(canvas, 320);
+      const pad = { l: 200, r: 24, t: 12, b: 36 };
+      const plotW = w - pad.l - pad.r;
+      const plotH = h - pad.t - pad.b;
+      const max = Math.max(...top.map(p => p.revenue), 1);
+      const rowH = plotH / top.length;
+      const muted = cssVar('--muted', '#5d6573');
+      const text = cssVar('--text', '#16181d');
+      const accent = cssVar('--accent', '#2563eb');
+
+      top.forEach((p, i) => {
+        const y = pad.t + i * rowH + rowH * 0.2;
+        const bh = rowH * 0.6;
+        const bw = (p.revenue / max) * plotW;
+        ctx.fillStyle = accent;
+        ctx.globalAlpha = 0.85;
+        ctx.fillRect(pad.l, y, bw, bh);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = text;
+        ctx.font = '13px system-ui';
+        ctx.textAlign = 'right';
+        ctx.fillText(p.product, pad.l - 10, y + bh * 0.7);
+        ctx.textAlign = 'left';
+        ctx.font = '12px ui-monospace, monospace';
+        ctx.fillStyle = muted;
+        ctx.fillText(fmtRs(p.revenue) + '  ·  ' + p.return_rate.toFixed(1) + '% ret', pad.l + bw + 8, y + bh * 0.7);
+      });
+    }
+
+    // ---- State / render ----
+    let analysis = null;
+    let selectedSeg = null;
+    let activeTab = 'rfm';
+
+    function renderAll() {
+      if (!analysis) return;
+      $('statRows').textContent = analysis.rows.toLocaleString('en-US');
+      $('statRev').textContent = fmtRs(analysis.netRevenue);
+      $('statCust').textContent = analysis.customers.toLocaleString('en-US');
+      $('statRet').textContent = analysis.returns.toLocaleString('en-US');
+      $('statGuest').textContent = analysis.guestRows.toLocaleString('en-US');
+
+      // RFM table
+      const tbody = $('segTable').querySelector('tbody');
+      tbody.innerHTML = analysis.segments.map(s => `
+        <tr data-seg="${escAttr(s.segment)}" class="${selectedSeg === s.segment ? 'sel' : ''}">
+          <td><span class="swatch" style="background:${SEGMENT_COLORS[s.segment] || '#888'}"></span>${esc(s.segment)}</td>
+          <td class="num">${s.customers.toLocaleString('en-US')}</td>
+          <td class="num">${fmtRs(s.revenue)}</td>
+          <td class="num">${s.share.toFixed(1)}%</td>
+          <td class="num">${s.avg_orders.toFixed(1)}</td>
+          <td class="num">${s.avg_recency.toFixed(0)}</td>
+        </tr>`).join('');
+      tbody.querySelectorAll('tr[data-seg]').forEach(tr => {
+        tr.addEventListener('click', () => {
+          selectedSeg = selectedSeg === tr.dataset.seg ? null : tr.dataset.seg;
+          renderAll();
+          showTab('rfm');
+        });
+      });
+
+      drawSegmentChart(analysis.segments, selectedSeg);
+      $('segLegend').innerHTML = analysis.segments.map(s =>
+        `<span><i class="swatch" style="background:${SEGMENT_COLORS[s.segment] || '#888'}"></i>${esc(s.segment)}</span>`
+      ).join('');
+
+      // top customers
+      const pool = selectedSeg
+        ? analysis.rfmRows.filter(r => r.segment === selectedSeg)
+        : analysis.rfmRows;
+      $('topCust').querySelector('tbody').innerHTML = pool.slice(0, 15).map(r => `
+        <tr>
+          <td class="mono">${esc(r.customer_id)}</td>
+          <td class="num">${r.frequency}</td>
+          <td class="num">${fmtRs(r.monetary)}</td>
+          <td class="num">${r.recency_days}</td>
+          <td>${esc(r.segment)}</td>
+        </tr>`).join('');
+
+      renderCohortTable(analysis.cohorts);
+      drawCohortChart(analysis.cohorts);
+      drawMonthly(analysis.monthly);
+
+      $('prodTable').querySelector('tbody').innerHTML = analysis.products.map(p => `
+        <tr>
+          <td>${esc(p.product)}</td>
+          <td class="muted">${esc(p.category)}</td>
+          <td class="num">${p.units.toLocaleString('en-US')}</td>
+          <td class="num">${fmtRs(p.revenue)}</td>
+          <td class="num">${p.return_rate.toFixed(1)}%</td>
+        </tr>`).join('');
+      drawProducts(analysis.products);
+    }
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function escAttr(s) { return esc(s); }
+
+    function showTab(name) {
+      activeTab = name;
+      document.querySelectorAll('.tabs button').forEach(b => {
+        const on = b.dataset.tab === name;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      for (const id of ['rfm', 'cohort', 'monthly', 'products']) {
+        $('panel-' + id).hidden = id !== name;
+      }
+      // redraw visible canvas (clientWidth needs layout)
+      requestAnimationFrame(() => {
+        if (!analysis) return;
+        if (name === 'rfm') drawSegmentChart(analysis.segments, selectedSeg);
+        if (name === 'cohort') drawCohortChart(analysis.cohorts);
+        if (name === 'monthly') drawMonthly(analysis.monthly);
+        if (name === 'products') drawProducts(analysis.products);
+      });
+    }
+
+    function regenerate() {
+      const rows = Math.min(8000, Math.max(200, +$('rows').value || 2500));
+      const seed = Math.max(1, +$('seed').value || 11);
+      const bias = Math.min(40, Math.max(0, +$('championBias').value || 8));
+      const orders = generateOrders(rows, seed, bias);
+      analysis = analyse(orders);
+      selectedSeg = null;
+      renderAll();
+      showTab(activeTab);
+    }
+
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.addEventListener('click', () => showTab(btn.dataset.tab));
+    });
+    $('regenBtn').addEventListener('click', regenerate);
+    window.addEventListener('resize', () => {
+      requestAnimationFrame(() => {
+        if (!analysis) return;
+        if (activeTab === 'rfm') drawSegmentChart(analysis.segments, selectedSeg);
+        if (activeTab === 'cohort') drawCohortChart(analysis.cohorts);
+        if (activeTab === 'monthly') drawMonthly(analysis.monthly);
+        if (activeTab === 'products') drawProducts(analysis.products);
+      });
+    });
+
+    regenerate();
+  </script>
+</body>
+</html>
