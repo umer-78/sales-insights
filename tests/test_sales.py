@@ -88,7 +88,9 @@ def test_top_products_shares_add_up(cleaned):
     products = analysis.top_products(df, n=10)
     assert len(products) == 10
     assert products.revenue.is_monotonic_decreasing
-    assert 0 < products.revenue_share_percent.sum() <= 100
+    # Each share is rounded to 1dp, so the top-10 sum can drift slightly
+    # above 100 when several products round up.
+    assert 0 < products.revenue_share_percent.sum() <= 100.5
     assert (products.return_rate_percent >= 0).all()
 
 
