@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "salesinsights"
+name = "sales-insights"
 version = "1.0.0"
-description = "Sales data analysis: cleaning, cohort retention, RFM segmentation, seasonality and a printable HTML report."
+description = "Sales analysis in pandas: cleaning with an audit trail, cohort retention, RFM segmentation, seasonality and a self-contained HTML report."
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Umer Hashmi" }]
