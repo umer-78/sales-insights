@@ -3,6 +3,8 @@
 **Live demo:** https://umer-78.github.io/sales-insights/
 
 [![CI](https://github.com/umer-78/sales-insights/actions/workflows/ci.yml/badge.svg)](https://github.com/umer-78/sales-insights/actions/workflows/ci.yml)
+
+[![Sales Insights: the live demo](.github/preview.jpg)](https://umer-78.github.io/sales-insights/)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![pandas](https://img.shields.io/badge/pandas-2.0%2B-150458)
 ![License](https://img.shields.io/badge/license-MIT-green)
